@@ -1,17 +1,16 @@
 (() => {
   // Default build: one row per category, pre-filled with the common choice (GPU left empty)
   const DEFAULT_BUILD = [
-    ['CPU', 'Intel Core Ultra 5 225'],
+    ['CPU + Mobo', 'Intel Core Ultra 5 225 + H810M-A'],
     ['GPU', ''],
     ['RAM', 'DDR5 8GB'],
-    ['Mobo', 'H810M-A'],
     ['PSU', '550W PSU'],
     ['SSD', 'NVMe SSD 512GB'],
     ['Casing', 'Side Tempered Glass Casing'],
   ];
   const CATS = DEFAULT_BUILD.map(([cat]) => cat);
   // Extra categories offered in "Add another row" (no presets, free-text names)
-  const EXTRA_CATS = ['Heatsink', 'Monitor', 'Fan'];
+  const EXTRA_CATS = ['CPU', 'Mobo', 'Heatsink', 'Monitor', 'Fan'];
 
   // Each category has groups of presets; a group with a `tier` is colour-coded in the UI.
   const intelGroup = (tier, models) => ({
@@ -26,6 +25,7 @@
       intelGroup(7, ['265', '265F', '265K', '265KF', '265T']),
       intelGroup(9, ['285', '285K', '285T']),
     ],
+    'CPU + Mobo': plain(['Intel Core Ultra 5 225 + H810M-A', 'Intel Core Ultra 5 225 + B860M-AYW', 'Intel Core Ultra 5 225 + B860M-A']),
     GPU: plain(['ASUS Dual RTX 5050', 'ASUS Dual RTX 5060', 'ASUS Dual RTX 5060 Ti']),
     RAM: plain(['DDR4 8GB', 'DDR4 16GB', 'DDR5 8GB', 'DDR5 16GB']),
     Mobo: plain(['H810M-A', 'B860M-AYW', 'B860M-A']),
