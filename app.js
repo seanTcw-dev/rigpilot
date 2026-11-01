@@ -57,6 +57,7 @@
     fee: DEFAULT_FEE,
     logo: '', // data URL of the company logo, kept in this browser only
     savedId: '', // id of the saved build this one was loaded from / saved as
+    schema: 3, // version of the default rows, see migrate()
     items: DEFAULT_BUILD.map(([cat, name]) => newItem(cat, name)),
   });
 
@@ -64,10 +65,22 @@
 
   let state = load();
 
+  // Builds saved by an older version get the newer default rows once (a deleted row stays deleted afterwards)
+  function migrate(saved) {
+    const st = Object.assign(blank(), saved);
+    if (!(saved.schema >= 3) && !st.items.some((it) => it.cat === 'WiFi & BT')) {
+      const row = newItem('WiFi & BT', 'WiFi & Bluetooth');
+      const gift = st.items.findIndex((it) => it.cat === 'Gift');
+      st.items.splice(gift >= 0 ? gift : st.items.length, 0, row);
+    }
+    st.schema = 3;
+    return st;
+  }
+
   function load() {
     try {
       const raw = localStorage.getItem(STORE_KEY);
-      if (raw) return Object.assign(blank(), JSON.parse(raw));
+      if (raw) return migrate(JSON.parse(raw));
     } catch (e) { /* storage may be unavailable (e.g. private mode) */ }
     return blank();
   }
@@ -353,9 +366,9 @@
         break;
       }
       case 'Casing':
-        // The preset is split over two lines using exactly its own words: "Tempered Glass" / "Side Panel Case"
+        // The preset reads "Tempered Glass" in bold with "Casing" underneath on the quotation
         c = name === 'Tempered Glass Side Panel Case'
-          ? { eyebrow: 'CHASSIS', title: 'Tempered Glass', detail: 'Side Panel Case', icon: 'case' }
+          ? { eyebrow: 'CHASSIS', title: 'Tempered Glass', detail: 'Casing', icon: 'case' }
           : { eyebrow: 'CHASSIS', title: name, detail: 'Casing', icon: 'case' };
         break;
       case 'GPU': {
