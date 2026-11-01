@@ -472,7 +472,7 @@ body.modal-open { overflow: hidden; }
 .paper.capture { position: fixed; left: 0; top: 0; z-index: -1; transform: none; box-shadow: none; clip-path: inset(100%); pointer-events: none; }
 
 /* Header block: coordinates are relative to the page's content box */
-.q-top { position: relative; height: 236px; }
+.q-top { position: relative; height: 248px; }
 .q-brand { position: absolute; left: 0; top: 0; height: 80px; display: flex; align-items: center; gap: 16px; }
 .q-logo { height: 80px; width: auto; max-width: 222px; object-fit: contain; }
 .q-head { position: absolute; right: 0; top: 0; text-align: right; white-space: nowrap; }
@@ -480,10 +480,10 @@ body.modal-open { overflow: hidden; }
 .q-head .q-meta { position: absolute; right: 0; font-size: 16px; line-height: 16px; color: #6C7480; }
 .q-rule { position: absolute; left: 0; top: 94px; width: 100%; height: 4px; border-radius: 2px; background: #E96425; }
 .q-sys {
-  position: absolute; left: 0; top: 106px; width: 100%; height: 130px; box-sizing: border-box;
+  position: absolute; left: 0; top: 106px; width: 100%; height: 124px; box-sizing: border-box;
   background: #F5F7FA; border: 1px solid #E1E6ED; border-radius: 20px; overflow: hidden;
 }
-.q-sys-text { position: absolute; left: 24px; top: 18px; bottom: 20px; right: 214px; display: flex; flex-direction: column; min-width: 0; }
+.q-sys-text { position: absolute; left: 24px; top: 14px; bottom: 14px; right: 214px; display: flex; flex-direction: column; min-width: 0; }
 .q-sys-eyebrow { display: flex; align-items: center; gap: 8px; font-size: 12px; line-height: 16px; font-weight: 700; letter-spacing: 0.55px; color: #647B97; }
 .q-sys-eyebrow svg { width: 16px; height: 16px; fill: none; stroke: #647B97; stroke-width: 1.65; stroke-linecap: round; stroke-linejoin: round; }
 .q-sys-title { margin-top: 6px; font-size: 30px; line-height: 36px; font-weight: 800; letter-spacing: -0.8px; color: #252D39; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

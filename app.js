@@ -399,7 +399,7 @@
 
   function cardHeights(cards) {
     const GAP = 18;
-    const AVAILABLE = 705; // page height minus header, total bar and margins, with slack so A4 never spills onto page 2
+    const AVAILABLE = 693; // page height minus header, total bar and margins, with slack so A4 never spills onto page 2
     const giftsH = cards.filter((c) => c.gifts || c.strip).reduce((sum, c) => sum + (c.gifts ? giftHeight(c) : WIRELESS_H) + GAP, 0);
     let wideRows = 0;
     let rows = 0;
