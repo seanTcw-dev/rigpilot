@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RigPilot PC Build Cost Calculator</title>
+  <meta name="description" content="Free PC build cost calculator with automatic totals and PDF / CSV / JSON export.">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app">
+    <header class="top">
+      <div class="brand">
+        <h1>RigPilot</h1>
+        <p>PC build cost calculator</p>
+      </div>
+      <div class="actions">
+        <button id="btn-pdf" class="primary">Export PDF</button>
+        <button id="btn-csv">Export CSV</button>
+        <button id="btn-json">Save JSON</button>
+        <button id="btn-import">Import JSON</button>
+        <button id="btn-clear" class="danger">Reset</button>
+        <input id="file-import" type="file" accept="application/json,.json" hidden>
+      </div>
+    </header>
+
+    <section class="card meta">
+      <label>Build name
+        <input id="title" type="text" placeholder="e.g. Mid-range gaming PC">
+      </label>
+      <label>Customer / reference
+        <input id="customer" type="text" placeholder="Optional">
+      </label>
+      <label>Date
+        <input id="date" type="date">
+      </label>
+      <label>Currency
+        <select id="currency"></select>
+      </label>
+      <div class="logo-field">
+        <span>Company logo (shown at the top of the PDF)</span>
+        <div class="logo-row">
+          <img id="logo-thumb" alt="Company logo" hidden>
+          <button id="btn-logo">Upload logo</button>
+          <button id="btn-logo-clear" hidden>Remove</button>
+          <input id="file-logo" type="file" accept="image/*" hidden>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="table-wrap">
+        <table id="items">
+          <thead>
+            <tr>
+              <th>Category</th>
+              <th>Part</th>
+              <th class="num">Qty</th>
+              <th class="num">Unit price</th>
+              <th class="num">Subtotal</th>
+              <th>Notes</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="quick">
+        <span>Add another row:</span>
+        <div id="quick-btns"></div>
+      </div>
+    </section>
+
+    <section class="card summary">
+      <label class="fee">Service fee
+        <input id="fee" type="number" min="0" step="any" value="500">
+      </label>
+      <div class="grand">
+        <span>Total</span>
+        <strong id="t-total">0</strong>
+      </div>
+    </section>
+
+    <footer class="foot">Your data is stored only in this browser and is never uploaded.</footer>
+  </div>
+
+  <!-- PDF preview: the quote sheet is shown here, then printed / saved as PDF from this view -->
+  <div id="preview" class="modal" role="dialog" aria-modal="true" aria-label="PDF preview" hidden>
+    <div class="modal-bar">
+      <h3>PDF preview</h3>
+      <div class="group">
+        <button id="btn-print" class="primary">Export PDF</button>
+        <button id="btn-wa" class="whatsapp">Share to WhatsApp</button>
+        <button id="btn-close">Close</button>
+      </div>
+    </div>
+    <div class="modal-scroll">
+      <div class="paper"><div id="sheet"></div></div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
