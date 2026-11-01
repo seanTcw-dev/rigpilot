@@ -6,7 +6,7 @@
     ['RAM', 'DDR5 8GB'],
     ['SSD', 'NVMe SSD 512GB'],
     ['PSU', '550W PSU'],
-    ['Casing', 'Side Tempered Glass Casing'],
+    ['Casing', 'Tempered Glass Side Panel Case'],
     ['Gift', 'Keyboard, Mouse, Mouse Pad, Power Cord'],
   ];
   const CATS = DEFAULT_BUILD.map(([cat]) => cat);
@@ -32,7 +32,7 @@
     Mobo: plain(['H810M-A', 'B860M-AYW', 'B860M-A']),
     PSU: plain(['550W PSU', 'Cooler Master MWE V3 750W 80+ Gold']),
     SSD: plain(['NVMe SSD 512GB', 'NVMe SSD 1TB', 'NVMe SSD 2TB']),
-    Casing: plain(['Side Tempered Glass Casing']),
+    Casing: plain(['Tempered Glass Side Panel Case']),
     Gift: plain(['Keyboard, Mouse, Mouse Pad, Power Cord']),
   };
   const CUSTOM = '__custom';
@@ -348,8 +348,9 @@
         break;
       }
       case 'Casing':
-        c = name === 'Side Tempered Glass Casing'
-          ? { eyebrow: 'CHASSIS', title: 'Tempered Glass', detail: 'Side Glass Casing', icon: 'case' }
+        // The preset is split over two lines using exactly its own words: "Tempered Glass" / "Side Panel Case"
+        c = name === 'Tempered Glass Side Panel Case'
+          ? { eyebrow: 'CHASSIS', title: 'Tempered Glass', detail: 'Side Panel Case', icon: 'case' }
           : { eyebrow: 'CHASSIS', title: name, detail: 'Casing', icon: 'case' };
         break;
       case 'GPU': {
