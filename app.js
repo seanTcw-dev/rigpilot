@@ -57,7 +57,7 @@
     fee: DEFAULT_FEE,
     logo: '', // data URL of the company logo, kept in this browser only
     savedId: '', // id of the saved build this one was loaded from / saved as
-    schema: 3, // version of the default rows, see migrate()
+    schema: 4, // version of the default rows, see migrate()
     items: DEFAULT_BUILD.map(([cat, name]) => newItem(cat, name)),
   });
 
@@ -66,14 +66,27 @@
   let state = load();
 
   // Builds saved by an older version get the newer default rows once (a deleted row stays deleted afterwards)
+  // Bring older item names up to the current presets and, when asked, add the WiFi & BT row (before Gift)
+  function modernize(items, addWifi) {
+    const list = items.map((it) => {
+      let name = String(it.name ?? '');
+      if (it.cat === 'Casing' && name === 'Side Tempered Glass Casing') name = 'Tempered Glass Side Panel Case';
+      if (it.cat === 'Mobo') name = name.replace(/^(?:ASUS )?(B860M-AYW|B860M-A|H810M-A)$/, 'ASUS PRIME $1');
+      if (it.cat === 'CPU + Mobo') name = name.replace(/\+ (?:ASUS )?(B860M-AYW|B860M-A|H810M-A)$/, '+ ASUS PRIME $1');
+      return name === it.name ? it : { ...it, name };
+    });
+    if (addWifi && !list.some((it) => it.cat === 'WiFi & BT')) {
+      const gift = list.findIndex((it) => it.cat === 'Gift');
+      list.splice(gift >= 0 ? gift : list.length, 0, newItem('WiFi & BT', 'WiFi & Bluetooth'));
+    }
+    return list;
+  }
+
   function migrate(saved) {
     const st = Object.assign(blank(), saved);
-    if (!(saved.schema >= 3) && !st.items.some((it) => it.cat === 'WiFi & BT')) {
-      const row = newItem('WiFi & BT', 'WiFi & Bluetooth');
-      const gift = st.items.findIndex((it) => it.cat === 'Gift');
-      st.items.splice(gift >= 0 ? gift : st.items.length, 0, row);
-    }
-    st.schema = 3;
+    // schema 3 added the WiFi row, schema 4 renamed casing / motherboard presets; a deleted WiFi row stays deleted
+    if (!(saved.schema >= 4)) st.items = modernize(st.items, !(saved.schema >= 3));
+    st.schema = 4;
     return st;
   }
 
@@ -168,8 +181,11 @@
     renderTotals();
   }
 
+  // Rows that only make sense with their standard text start filled in
+  const ADD_DEFAULTS = { 'WiFi & BT': 'WiFi & Bluetooth', Gift: 'Keyboard, Mouse, Mouse Pad, Power Cord' };
+
   function addItem(cat) {
-    state.items.push(newItem(cat));
+    state.items.push(newItem(cat, ADD_DEFAULTS[cat] || ''));
     save();
     renderRows();
   }
@@ -813,7 +829,8 @@
   function applyBuild(data, savedId = '') {
     const logo = state.logo;
     state = Object.assign(blank(), data, { logo: data.logo || logo, savedId });
-    state.items = data.items.map((it) => Object.assign(newItem('Other'), it, { id: uid() }));
+    // Saved builds from an older version are brought up to date when they are loaded
+    state.items = modernize(data.items.map((it) => Object.assign(newItem('Other'), it, { id: uid() })), true);
     save();
     syncMeta();
     renderRows();
