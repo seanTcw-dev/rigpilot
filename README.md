@@ -7,7 +7,9 @@ A free, static PC build cost calculator. No backend, no build step, no dependenc
 - Fixed rows for CPU, GPU, RAM, Mobo, PSU, SSD and Casing, each with a preset dropdown plus a "Custom…" option
 - Quantity and unit price per part, a service fee (default 500) and an automatic total, in MYR by default
 - Export to PDF (part names and total only, no per-part prices), CSV or JSON; import JSON back
-- Data is kept in the browser's `localStorage` only
+- Upload a company logo once; it appears at the top of the PDF
+- Save builds to a history list (load, update, delete, search); builds older than 3 years are removed automatically (`KEEP_YEARS` in `app.js`, set to 0 to keep forever); backup and restore the whole history as JSON
+- All data is kept in the browser's `localStorage` only
 
 ## Run locally
 

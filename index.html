@@ -81,6 +81,56 @@
       </div>
     </section>
 
+    <details class="card sync" id="sync-card">
+      <summary>GitHub storage <span id="sync-status" class="sync-status"></span></summary>
+      <div class="sync-body">
+        <label>Data repository (use a private one)
+          <input id="sync-repo" type="text" placeholder="owner/repo" autocomplete="off">
+        </label>
+        <label id="sync-token-label">Access token
+          <input id="sync-token" type="password" placeholder="github_pat_…" autocomplete="off">
+        </label>
+        <label id="sync-remember-label" class="check">
+          <input id="sync-remember" type="checkbox" checked> Remember the token on this device
+        </label>
+        <div class="sync-actions">
+          <button id="btn-connect" class="primary">Connect</button>
+          <button id="btn-disconnect" hidden>Disconnect</button>
+        </div>
+        <p class="hint">Saved builds and the company logo are stored as files in this repository instead of in the browser. The token needs <b>Contents: Read and write</b> on that one repository only.</p>
+      </div>
+    </details>
+
+    <section class="card history">
+      <div class="hist-head">
+        <h2>Saved builds</h2>
+        <div class="hist-actions">
+          <button id="btn-save" class="primary">Save this build</button>
+          <button id="btn-save-new" hidden>Save as new</button>
+          <button id="btn-backup">Backup all</button>
+          <button id="btn-restore">Restore backup</button>
+        </div>
+      </div>
+      <p id="hist-msg" class="hist-msg" role="status"></p>
+      <input id="hist-search" type="search" placeholder="Search by name, customer or date">
+      <div class="table-wrap">
+        <table id="history">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Name</th>
+              <th>Customer</th>
+              <th class="num">Total</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <p id="hist-empty" class="empty">No saved builds yet. Fill in the prices and click "Save this build".</p>
+      <p id="hist-hint" class="hint"></p>
+    </section>
+
     <footer class="foot">Your data is stored only in this browser and is never uploaded.</footer>
   </div>
 

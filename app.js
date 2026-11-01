@@ -52,6 +52,7 @@
     currency: 'MYR',
     fee: DEFAULT_FEE,
     logo: '', // data URL of the company logo, kept in this browser only
+    savedId: '', // id of the saved build this one was loaded from / saved as
     items: DEFAULT_BUILD.map(([cat, name]) => newItem(cat, name)),
   });
 
@@ -84,14 +85,15 @@
     const g = groupsOf(it.cat).find((x) => x.items.includes(it.name));
     return g && g.tier ? 'tier-' + g.tier : '';
   };
-  const sym = () => CURRENCIES[state.currency] || '';
-  const money = (n) => sym() + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const fmt = (currency, n) => (CURRENCIES[currency] || '') + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const money = (n) => fmt(state.currency, n);
 
   // ---------- Calculations ----------
-  function total() {
-    const parts = state.items.reduce((s, it) => s + num(it.qty) * num(it.price), 0);
-    return parts + num(state.fee);
+  function calcTotal(build) {
+    const parts = build.items.reduce((s, it) => s + num(it.qty) * num(it.price), 0);
+    return parts + num(build.fee);
   }
+  const total = () => calcTotal(state);
 
   function renderTotals() {
     $('t-total').textContent = money(total());
@@ -185,6 +187,7 @@
         state.logo = canvas.toDataURL('image/png');
         save();
         syncLogo();
+        pushLogo();
       };
       img.onerror = () => alert('Could not read that image.');
       img.src = reader.result;
@@ -348,22 +351,348 @@
     download(baseName() + '.csv', '﻿' + lines.join('\r\n'), 'text/csv;charset=utf-8');
   }
 
+  // Replace the current build; the current company logo is kept unless the data carries its own
+  function applyBuild(data, savedId = '') {
+    const logo = state.logo;
+    state = Object.assign(blank(), data, { logo: data.logo || logo, savedId });
+    state.items = data.items.map((it) => Object.assign(newItem('Other'), it, { id: uid() }));
+    save();
+    syncMeta();
+    renderRows();
+    renderHistory();
+  }
+
   function importJson(file) {
     const reader = new FileReader();
     reader.onload = () => {
       try {
         const data = JSON.parse(reader.result);
+        if (data && Array.isArray(data.records)) { restoreBackup(data.records); return; }
         if (!data || !Array.isArray(data.items)) throw new Error('bad');
-        state = Object.assign(blank(), data);
-        state.items = data.items.map((it) => Object.assign(newItem('Other'), it, { id: uid() }));
-        save();
-        syncMeta();
-        renderRows();
+        applyBuild(data);
       } catch (e) {
         alert('Invalid file format. Could not import.');
       }
     };
     reader.readAsText(file);
+  }
+
+  // ---------- GitHub storage (private data repo) ----------
+  // Saved builds live in history.json and the logo in logo.json, committed through the GitHub contents API.
+  const GH_API = 'https://api.github.com';
+  const SYNC_KEY = 'rigpilot.sync';
+  const DEFAULT_REPO = 'seanTcw-dev/rigpilot-data';
+
+  function loadSync() {
+    for (const store of [localStorage, sessionStorage]) {
+      try {
+        const raw = store.getItem(SYNC_KEY);
+        if (raw) return JSON.parse(raw);
+      } catch (e) { /* ignore */ }
+    }
+    return { repo: DEFAULT_REPO, token: '', remember: true };
+  }
+
+  function saveSync() {
+    try {
+      localStorage.removeItem(SYNC_KEY);
+      sessionStorage.removeItem(SYNC_KEY);
+      if (sync.token) (sync.remember ? localStorage : sessionStorage).setItem(SYNC_KEY, JSON.stringify(sync));
+    } catch (e) { /* ignore */ }
+  }
+
+  let sync = loadSync();
+  const isCloud = () => !!sync.token;
+
+  const b64enc = (text) => {
+    let bin = '';
+    new TextEncoder().encode(text).forEach((b) => { bin += String.fromCharCode(b); });
+    return btoa(bin);
+  };
+  const b64dec = (b64) => new TextDecoder().decode(Uint8Array.from(atob(b64.replace(/\s/g, '')), (c) => c.charCodeAt(0)));
+
+  function ghError(res) {
+    const msg = {
+      401: 'GitHub rejected the token (wrong or expired). Create a new token and reconnect.',
+      403: 'GitHub refused the request. The token needs Contents: Read and write on the data repository.',
+      404: 'Data repository not found, or the token has no access to it.',
+    }[res.status] || `GitHub error ${res.status}.`;
+    return new Error(msg);
+  }
+
+  async function ghFetch(url, opts = {}) {
+    try {
+      return await fetch(GH_API + url, {
+        cache: 'no-store',
+        ...opts,
+        headers: { Accept: 'application/vnd.github+json', Authorization: `Bearer ${sync.token}`, ...(opts.headers || {}) },
+      });
+    } catch (e) {
+      throw new Error('Could not reach GitHub. Check your internet connection.');
+    }
+  }
+
+  async function remoteRead(path, fallback) {
+    const res = await ghFetch(`/repos/${sync.repo}/contents/${path}`);
+    if (res.status === 404) return { data: fallback, sha: undefined };
+    if (!res.ok) throw ghError(res);
+    const file = await res.json();
+    if (!file.content) throw new Error(`${path} is too large to load from GitHub.`);
+    return { data: JSON.parse(b64dec(file.content)), sha: file.sha };
+  }
+
+  // Read the latest file, apply fn to it, commit. Retried on conflict so edits from another device aren't lost.
+  async function remoteMutate(path, fallback, fn, message) {
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const { data, sha } = await remoteRead(path, fallback);
+      const next = fn(data);
+      const res = await ghFetch(`/repos/${sync.repo}/contents/${path}`, {
+        method: 'PUT',
+        body: JSON.stringify({ message, content: b64enc(JSON.stringify(next)), sha }),
+      });
+      if (res.ok) return next;
+      if (res.status !== 409 && res.status !== 422) throw ghError(res);
+    }
+    throw new Error('GitHub kept reporting a conflict. Please try again.');
+  }
+
+  function setSyncStatus(text, kind = '') {
+    $('sync-status').textContent = text;
+    $('sync-status').className = 'sync-status ' + kind;
+  }
+
+  function renderSyncUI() {
+    $('sync-repo').value = sync.repo;
+    $('sync-remember').checked = sync.remember !== false;
+    const on = isCloud();
+    $('sync-repo').disabled = on;
+    $('sync-token-label').hidden = on;
+    $('sync-remember-label').hidden = on;
+    $('btn-connect').hidden = on;
+    $('btn-disconnect').hidden = !on;
+    if (!on) setSyncStatus('Not connected: data stays in this browser');
+  }
+
+  // ---------- Saved builds (history) ----------
+  const HISTORY_KEY = 'rigpilot.history.v1'; // browser-only storage, used when GitHub isn't connected
+  const KEEP_YEARS = 3; // saved builds older than this are removed automatically; 0 keeps them forever
+  const KEEP_MS = KEEP_YEARS * 365.25 * 24 * 3600 * 1000;
+  const isFresh = (r) => !KEEP_YEARS || !(Date.now() - Date.parse(r.savedAt) > KEEP_MS);
+  const isRecord = (r) => r && r.id && r.build && Array.isArray(r.build.items) && !Number.isNaN(Date.parse(r.savedAt));
+
+  let history = isCloud() ? [] : loadHistory();
+  let busy = false;
+
+  function loadHistory() {
+    try {
+      const list = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
+      if (!Array.isArray(list)) return [];
+      const fresh = list.filter(isFresh);
+      if (fresh.length !== list.length) writeHistory(fresh); // persist the auto-removal
+      return fresh;
+    } catch (e) { return []; }
+  }
+
+  function writeHistory(list) {
+    try {
+      localStorage.setItem(HISTORY_KEY, JSON.stringify(list));
+    } catch (e) {
+      throw new Error('Could not save: browser storage is full or blocked.');
+    }
+  }
+
+  const historyMsg = (text) => { $('hist-msg').textContent = text; };
+
+  function mergeRecords(list, records) {
+    const byId = new Map(list.map((r) => [r.id, r]));
+    records.forEach((r) => {
+      const old = byId.get(r.id);
+      if (!old || Date.parse(r.savedAt) > Date.parse(old.savedAt)) {
+        byId.set(r.id, { id: String(r.id), savedAt: r.savedAt, total: num(r.total), build: r.build });
+      }
+    });
+    return [...byId.values()];
+  }
+
+  // Apply a change to the saved builds, in GitHub when connected, otherwise in this browser
+  async function changeHistory(fn, message) {
+    if (isCloud()) return remoteMutate('history.json', [], (cur) => fn(Array.isArray(cur) ? cur : []), message);
+    const next = fn(history.slice());
+    writeHistory(next);
+    return next;
+  }
+
+  async function runHistory(op, okMsg, after) {
+    if (busy) return;
+    busy = true;
+    historyMsg(isCloud() ? 'Saving to GitHub…' : '');
+    try {
+      history = await op();
+      if (after) after();
+      renderHistory();
+      historyMsg(okMsg);
+    } catch (e) {
+      historyMsg('');
+      alert(e.message || 'Something went wrong.');
+    } finally {
+      busy = false;
+    }
+  }
+
+  const snapshot = () => ({
+    title: state.title,
+    customer: state.customer,
+    date: state.date,
+    currency: state.currency,
+    fee: state.fee,
+    items: state.items.map(({ cat, name, qty, price, note }) => ({ cat, name, qty, price, note })),
+  });
+
+  function saveBuild(asNew) {
+    const linked = !asNew && history.some((r) => r.id === state.savedId);
+    const record = { id: linked ? state.savedId : uid() + uid(), savedAt: new Date().toISOString(), total: total(), build: snapshot() };
+    runHistory(
+      () => changeHistory((list) => {
+        const i = list.findIndex((r) => r.id === record.id);
+        if (i >= 0) list[i] = record; else list.push(record);
+        return list;
+      }, `Save build: ${record.build.title || 'Untitled'}`),
+      linked ? 'Saved build updated.' : 'Build saved.',
+      () => { state.savedId = record.id; save(); },
+    );
+  }
+
+  function loadBuild(id) {
+    const r = history.find((x) => x.id === id);
+    if (!r || !confirm(`Load "${r.build.title || 'Untitled'}"? Your current edits will be replaced.`)) return;
+    applyBuild(r.build, r.id);
+    historyMsg('Build loaded.');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  function deleteBuild(id) {
+    const r = history.find((x) => x.id === id);
+    if (!r || !confirm(`Delete "${r.build.title || 'Untitled'}" from saved builds?`)) return;
+    runHistory(
+      () => changeHistory((list) => list.filter((x) => x.id !== id), 'Delete build'),
+      'Build deleted.',
+      () => { if (state.savedId === id) { state.savedId = ''; save(); } },
+    );
+  }
+
+  function renderHistory() {
+    const q = $('hist-search').value.trim().toLowerCase();
+    const rows = history
+      .filter((r) => !q || [r.build.title, r.build.customer, r.build.date].join(' ').toLowerCase().includes(q))
+      .sort((a, b) => Date.parse(b.savedAt) - Date.parse(a.savedAt));
+    $('history').querySelector('tbody').innerHTML = rows.map((r) => `<tr data-id="${esc(r.id)}"${r.id === state.savedId ? ' class="current"' : ''}>
+      <td>${esc(r.build.date)}</td>
+      <td>${esc(r.build.title || 'Untitled')}</td>
+      <td>${esc(r.build.customer)}</td>
+      <td class="num">${fmt(r.build.currency, num(r.total))}</td>
+      <td><div class="row-actions"><button data-act="load">Load</button><button data-act="delete" class="danger">Delete</button></div></td>
+    </tr>`).join('');
+    $('hist-empty').classList.toggle('hidden', history.length > 0);
+    const linked = history.some((r) => r.id === state.savedId);
+    $('btn-save').textContent = linked ? 'Update saved build' : 'Save this build';
+    $('btn-save-new').hidden = !linked;
+    $('hist-hint').textContent = (isCloud()
+      ? `Saved builds are stored in your GitHub repository ${sync.repo}`
+      : 'Saved builds stay in this browser only')
+      + (KEEP_YEARS ? ` and are removed automatically after ${KEEP_YEARS} years.` : '.')
+      + ' "Backup all" downloads a copy you can restore anywhere.';
+  }
+
+  function backupAll() {
+    download('rigpilot-backup-' + today() + '.json', JSON.stringify({ rigpilot: 'history', records: history }, null, 2), 'application/json');
+  }
+
+  function restoreBackup(records) {
+    const valid = records.filter(isRecord).filter(isFresh);
+    const added = valid.filter((r) => !history.some((h) => h.id === r.id)).length;
+    runHistory(
+      () => changeHistory((list) => mergeRecords(list, valid), 'Restore backup'),
+      `Backup restored: ${added} new build(s).`,
+    );
+  }
+
+  // Pull saved builds and the logo from GitHub (or the browser when not connected)
+  async function refreshStorage() {
+    if (!isCloud()) {
+      history = loadHistory();
+      renderHistory();
+      return;
+    }
+    setSyncStatus('Syncing…');
+    try {
+      const [h, l] = await Promise.all([remoteRead('history.json', []), remoteRead('logo.json', { logo: '' })]);
+      let list = Array.isArray(h.data) ? h.data : [];
+      if (!list.every(isFresh)) {
+        list = await remoteMutate('history.json', [], (cur) => cur.filter(isFresh), `Remove builds older than ${KEEP_YEARS} years`);
+      }
+      history = list;
+      if (l.data.logo) { state.logo = l.data.logo; save(); syncLogo(); }
+      setSyncStatus('Connected to ' + sync.repo, 'ok');
+    } catch (e) {
+      history = [];
+      setSyncStatus(e.message, 'err');
+    }
+    renderHistory();
+  }
+
+  async function pushLogo() {
+    if (!isCloud()) return;
+    try {
+      await remoteMutate('logo.json', { logo: '' }, () => ({ logo: state.logo }), state.logo ? 'Update logo' : 'Remove logo');
+    } catch (e) {
+      alert('The logo was kept on this device only: ' + e.message);
+    }
+  }
+
+  async function connect() {
+    const repo = $('sync-repo').value.trim().replace(/^https?:\/\/github\.com\//, '').replace(/\.git$/, '').replace(/\/$/, '');
+    const token = $('sync-token').value.trim();
+    if (!/^[\w.-]+\/[\w.-]+$/.test(repo) || !token) { alert('Enter the repository as owner/name and paste the access token.'); return; }
+    const previous = sync;
+    sync = { repo, token, remember: $('sync-remember').checked };
+    setSyncStatus('Connecting…');
+    try {
+      const res = await ghFetch(`/repos/${repo}`);
+      if (!res.ok) throw ghError(res);
+      const info = await res.json();
+      if (!info.private && !confirm(`"${repo}" is a PUBLIC repository: anyone could read your saved builds and customer names. Use a private repository instead.\n\nContinue anyway?`)) {
+        sync = previous;
+        renderSyncUI();
+        return;
+      }
+      // A real write doubles as the permission check
+      await remoteMutate('history.json', [], (cur) => (Array.isArray(cur) ? cur : []), 'Connect RigPilot');
+      const local = loadHistory();
+      if (local.length) {
+        await remoteMutate('history.json', [], (cur) => mergeRecords(cur, local), 'Import builds from this browser');
+        localStorage.removeItem(HISTORY_KEY);
+      }
+      const logo = await remoteRead('logo.json', { logo: '' });
+      if (!logo.data.logo && state.logo) await pushLogo();
+      saveSync();
+      $('sync-token').value = '';
+      renderSyncUI();
+      await refreshStorage();
+      historyMsg('Connected. Saved builds now live in GitHub.');
+    } catch (e) {
+      sync = previous;
+      renderSyncUI();
+      setSyncStatus(e.message, 'err');
+      alert(e.message);
+    }
+  }
+
+  function disconnect() {
+    if (!confirm('Disconnect from GitHub? Your saved builds stay in the repository; this browser will stop using them.')) return;
+    sync = { repo: sync.repo, token: '', remember: true };
+    saveSync();
+    renderSyncUI();
+    refreshStorage();
   }
 
   function bindActions() {
@@ -376,7 +705,21 @@
       state.logo = '';
       save();
       syncLogo();
+      pushLogo();
     });
+    $('btn-save').addEventListener('click', () => saveBuild(false));
+    $('btn-save-new').addEventListener('click', () => saveBuild(true));
+    $('btn-backup').addEventListener('click', backupAll);
+    $('btn-restore').addEventListener('click', () => $('file-import').click());
+    $('hist-search').addEventListener('input', renderHistory);
+    $('history').querySelector('tbody').addEventListener('click', (e) => {
+      const btn = e.target.closest('button[data-act]');
+      if (!btn) return;
+      const id = btn.closest('tr').dataset.id;
+      if (btn.dataset.act === 'load') loadBuild(id); else deleteBuild(id);
+    });
+    $('btn-connect').addEventListener('click', connect);
+    $('btn-disconnect').addEventListener('click', disconnect);
     $('btn-pdf').addEventListener('click', openPreview);
     $('btn-print').addEventListener('click', printPdf);
     $('btn-wa').addEventListener('click', shareWhatsApp);
@@ -399,6 +742,7 @@
       save();
       syncMeta();
       renderRows();
+      renderHistory();
     });
   }
 
@@ -406,4 +750,6 @@
   bindActions();
   syncMeta();
   renderRows();
+  renderSyncUI();
+  refreshStorage();
 })();
