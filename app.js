@@ -4,9 +4,10 @@
     ['CPU + Mobo', 'Intel Core Ultra 5 225 + H810M-A'],
     ['GPU', ''],
     ['RAM', 'DDR5 8GB'],
-    ['PSU', '550W PSU'],
     ['SSD', 'NVMe SSD 512GB'],
+    ['PSU', '550W PSU'],
     ['Casing', 'Side Tempered Glass Casing'],
+    ['Gift', 'Keyboard, Mouse, Mouse Pad, Power Cord'],
   ];
   const CATS = DEFAULT_BUILD.map(([cat]) => cat);
   // Extra categories offered in "Add another row" (no presets, free-text names)
@@ -32,6 +33,7 @@
     PSU: plain(['550W PSU', 'Cooler Master MWE V3 750W 80+ Gold']),
     SSD: plain(['NVMe SSD 512GB', 'NVMe SSD 1TB', 'NVMe SSD 2TB']),
     Casing: plain(['Side Tempered Glass Casing']),
+    Gift: plain(['Keyboard, Mouse, Mouse Pad, Power Cord']),
   };
   const CUSTOM = '__custom';
 
@@ -56,6 +58,8 @@
     items: DEFAULT_BUILD.map(([cat, name]) => newItem(cat, name)),
   });
 
+  const sheetEdits = new Map(); // double-click text edits on the quotation, dropped when the build changes
+
   let state = load();
 
   function load() {
@@ -67,6 +71,7 @@
   }
 
   function save() {
+    sheetEdits.clear();
     try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); } catch (e) { /* ignore */ }
   }
 
@@ -132,12 +137,12 @@
 
   function rowHtml(it) {
     return `<tr data-id="${it.id}">
-      <td class="cat">${esc(it.cat)}</td>
+      <td class="cat"><span class="chip">${esc(it.cat)}</span></td>
       <td class="c-part">${partCell(it)}</td>
-      <td class="num c-qty"><input data-f="qty" type="number" min="0" step="1" value="${esc(it.qty)}"></td>
-      <td class="num c-price"><input data-f="price" type="number" min="0" step="any" value="${esc(it.price)}"></td>
-      <td class="sub c-sub"></td>
-      <td class="c-note"><input data-f="note" value="${esc(it.note)}" placeholder="Link / notes"></td>
+      <td class="num c-qty" data-label="Qty"><input data-f="qty" type="number" min="0" step="1" value="${esc(it.qty)}"></td>
+      <td class="num c-price" data-label="Unit price"><input data-f="price" type="number" min="0" step="any" value="${esc(it.price)}"></td>
+      <td class="sub c-sub" data-label="Subtotal"></td>
+      <td class="c-note" data-label="Notes"><input data-f="note" value="${esc(it.note)}" placeholder="Link / notes"></td>
       <td class="c-del"><button class="del" title="Delete row" aria-label="Delete row">×</button></td>
     </tr>`;
   }
@@ -170,29 +175,43 @@
     $('btn-logo').textContent = state.logo ? 'Change logo' : 'Upload logo';
   }
 
-  // Downscale so the logo stays small enough for localStorage
-  function loadLogo(file) {
-    if (!file.type.startsWith('image/')) { alert('Please choose an image file.'); return; }
-    const reader = new FileReader();
-    reader.onload = () => {
-      const img = new Image();
-      img.onload = () => {
-        const w0 = img.naturalWidth || 300;
-        const h0 = img.naturalHeight || 150;
-        const scale = Math.min(1, 480 / w0, 240 / h0);
-        const canvas = document.createElement('canvas');
-        canvas.width = Math.max(1, Math.round(w0 * scale));
-        canvas.height = Math.max(1, Math.round(h0 * scale));
-        canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
-        state.logo = canvas.toDataURL('image/png');
-        save();
-        syncLogo();
-        pushLogo();
+  // Downscale an uploaded image so it stays small enough for browser and GitHub storage
+  function readImage(file, maxW, maxH, preferWebp) {
+    return new Promise((resolve, reject) => {
+      if (!file.type.startsWith('image/')) { reject(new Error('Please choose an image file.')); return; }
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error('Could not read that image.'));
+      reader.onload = () => {
+        const img = new Image();
+        img.onerror = () => reject(new Error('Could not read that image.'));
+        img.onload = () => {
+          const w0 = img.naturalWidth || 300;
+          const h0 = img.naturalHeight || 150;
+          const scale = Math.min(1, maxW / w0, maxH / h0);
+          const canvas = document.createElement('canvas');
+          canvas.width = Math.max(1, Math.round(w0 * scale));
+          canvas.height = Math.max(1, Math.round(h0 * scale));
+          canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+          let url = preferWebp ? canvas.toDataURL('image/webp', 0.88) : '';
+          if (!url.startsWith('data:image/webp')) url = canvas.toDataURL('image/png');
+          resolve(url);
+        };
+        img.src = reader.result;
       };
-      img.onerror = () => alert('Could not read that image.');
-      img.src = reader.result;
-    };
-    reader.readAsDataURL(file);
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async function loadImageInto(key, file, maxW, maxH, preferWebp) {
+    try {
+      state[key] = await readImage(file, maxW, maxH, preferWebp);
+    } catch (e) {
+      alert(e.message);
+      return;
+    }
+    save();
+    syncLogo();
+    pushLogo();
   }
 
   function onRowInput(e) {
@@ -270,64 +289,447 @@
   // ---------- Print / PDF ----------
   const namedItems = () => state.items.filter((it) => it.name.trim());
 
-  const itemLabel = (it) => it.name.trim() + (num(it.qty) > 1 ? ` × ${num(it.qty)}` : '');
+  const VALID_DAYS = 14; // "Valid for N Days" line on the quotation
+  const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const prettyDate = (iso) => {
+    const [y, m, d] = String(iso || '').split('-');
+    return m && MONTHS[+m - 1] ? `${d} ${MONTHS[+m - 1]} ${y}` : String(iso || '');
+  };
+  // Quotation amounts read "RM 2,495.00"
+  const qmoney = (n) => money(n).replace(/^([^\d-]+)/, '$1 ');
+
+  // Line icons, drawn in a 24x24 box
+  const ICONS = {
+    cpu: '<rect x="4" y="4" width="16" height="16" rx="3"/><rect x="9" y="9" width="6" height="6" rx="1"/><path d="M8 0V4M16 0V4M8 20V24M16 20V24M0 8H4M0 16H4M20 8H24M20 16H24"/>',
+    mobo: '<rect x="2" y="2" width="20" height="20" rx="2"/><rect x="5" y="5" width="7" height="7" rx="1"/><path d="M15 5v7M18 5v7M5 16h6M5 19h6"/><rect x="14" y="15" width="5" height="4" rx="0.8"/>',
+    ram: '<rect x="1" y="5" width="22" height="11" rx="1.5"/><path d="M4 16v3M8 16v3M12 16v3M16 16v3M20 16v3"/><rect x="4" y="8" width="4" height="5" rx="0.6"/><rect x="10" y="8" width="4" height="5" rx="0.6"/><rect x="16" y="8" width="4" height="5" rx="0.6"/>',
+    ssd: '<ellipse cx="12" cy="5.5" rx="8" ry="3"/><path d="M4 5.5v13c0 1.66 3.58 3 8 3s8-1.34 8-3v-13"/><path d="M4 12c0 1.66 3.58 3 8 3s8-1.34 8-3"/>',
+    bolt: '<path d="M13 1L4 16h8l-3 8 11-14h-8z"/>',
+    case: '<rect x="4.5" y="0" width="15" height="24" rx="2"/><path d="M8.5 5h7v10h-7z"/><circle cx="12" cy="19.5" r="1"/>',
+    gpu: '<rect x="3" y="4" width="20" height="12" rx="1.5"/><path d="M3 6H1v8h2"/><circle cx="9.5" cy="10" r="3"/><circle cx="17" cy="10" r="3"/><circle cx="9.5" cy="10" r="0.6"/><circle cx="17" cy="10" r="0.6"/><path d="M6 16v3h9v-3"/>',
+    monitor: '<rect x="2" y="3" width="20" height="13" rx="2"/><path d="M8 21h8M12 16v5"/>',
+    fan: '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="1.6"/><path d="M12 10.4C12 6.5 14 4.3 16.8 4.8M13.6 12c3.9 0 6.1 2 5.6 4.8M12 13.6c0 3.9-2 6.1-4.8 5.6M10.4 12c-3.9 0-6.1-2-5.6-4.8"/>',
+    heatsink: '<path d="M4 3v12M8 3v12M12 3v12M16 3v12M20 3v12"/><rect x="2" y="15" width="20" height="5" rx="1"/><path d="M6 20v2M18 20v2"/>',
+    gift: '<rect x="2.6" y="8.5" width="19" height="5.7" rx="1.5"/><path d="M4.8 14.3v7.2h14.6v-7.2M12.1 8.5v13"/><path d="M12 8.5C7.7 8.5 6.3 7.5 6.3 5.2c0-1.7 1.3-2.3 2.5-1.9 1.5.5 2.4 2.6 3.2 5.2Zm0 0c4.3 0 5.7-1 5.7-3.3 0-1.7-1.3-2.3-2.5-1.9-1.5.5-2.4 2.6-3.2 5.2Z"/>',
+    box: '<path d="M3 7l9-4 9 4v10l-9 4-9-4z"/><path d="M3 7l9 4 9-4M12 11v10"/>',
+  };
+
+  // The quotation shows the CPU tier only (e.g. "Ultra 5"), not the full model
+  const cpuTitle = (name) => {
+    const m = name.match(/Ultra\s*(\d)/i);
+    return m ? `Ultra ${m[1]}` : name;
+  };
+  const tidy = (s) => s.replace(/\s+/g, ' ').trim();
+
+  // Turn one part row into the text shown on its quotation card
+  function cardOf(it) {
+    const name = it.name.trim();
+    let c;
+    switch (it.cat) {
+      case 'CPU':
+        c = { eyebrow: 'PROCESSOR', title: cpuTitle(name), detail: 'Processor', icon: 'cpu' };
+        break;
+      case 'Mobo':
+        c = { eyebrow: 'MOTHERBOARD', title: name, detail: 'Motherboard', icon: 'mobo' };
+        break;
+      case 'RAM': {
+        const m = name.match(/(DDR\d)\s*(\d+\s*[GT]B)/i);
+        c = { eyebrow: 'MEMORY', title: m ? m[2].replace(/\s/g, '') : name, detail: m ? `${m[1].toUpperCase()} RAM` : 'RAM', icon: 'ram' };
+        break;
+      }
+      case 'SSD': {
+        const m = name.match(/(\d+(?:\.\d+)?\s*[GT]B)/i);
+        c = { eyebrow: 'STORAGE', title: m ? m[1].replace(/\s/g, '') : name, detail: m ? tidy(name.replace(m[0], '')) || 'SSD' : 'SSD', icon: 'ssd' };
+        break;
+      }
+      case 'PSU': {
+        const m = name.match(/(\d{3,4})\s*W\b/i);
+        c = { eyebrow: 'POWER SUPPLY', title: m ? `${m[1]}W` : name, detail: m ? tidy(name.replace(m[0], '')) || 'PSU' : 'PSU', icon: 'bolt' };
+        break;
+      }
+      case 'Casing':
+        c = name === 'Side Tempered Glass Casing'
+          ? { eyebrow: 'CHASSIS', title: 'Tempered Glass', detail: 'Side Glass Casing', icon: 'case' }
+          : { eyebrow: 'CHASSIS', title: name, detail: 'Casing', icon: 'case' };
+        break;
+      case 'GPU': {
+        const m = name.match(/RTX\s*\d{4}(?:\s*Ti)?/i);
+        c = { eyebrow: 'GRAPHICS', title: m ? m[0] : name, detail: `${m ? tidy(name.replace(m[0], '')) : ''} Graphics Card`.trim(), icon: 'gpu' };
+        break;
+      }
+      case 'Heatsink':
+        c = { eyebrow: 'COOLING', title: name, detail: 'CPU Cooler', icon: 'heatsink' };
+        break;
+      case 'Fan':
+        c = { eyebrow: 'COOLING', title: name, detail: 'Case Fan', icon: 'fan' };
+        break;
+      case 'Monitor':
+        c = { eyebrow: 'DISPLAY', title: name, detail: 'Monitor', icon: 'monitor' };
+        break;
+      case 'Gift':
+        c = { eyebrow: 'GIFT', icon: 'gift', wide: true, gifts: name.split(/[,\n]/).map((g) => g.trim()).filter(Boolean) };
+        break;
+      default:
+        c = { eyebrow: it.cat.toUpperCase(), title: name, detail: '', icon: 'box' };
+    }
+    if (!c.cols && !c.gifts) c.cols = [{ title: c.title, detail: c.detail }];
+    const qty = num(it.qty);
+    if (qty > 1 && c.cols) c.cols[0].detail = tidy(`${c.cols[0].detail} × ${qty}`);
+    return c;
+  }
+
+  // A "CPU + Mobo" row becomes two separate cards on the quotation: processor and motherboard
+  function cardsOf(it) {
+    if (it.cat !== 'CPU + Mobo') return [cardOf(it)];
+    const [cpu, ...rest] = it.name.trim().split(/\s+\+\s+/);
+    const mobo = rest.join(' + ');
+    return [cardOf({ ...it, cat: 'CPU', name: cpu }), ...(mobo ? [cardOf({ ...it, cat: 'Mobo', name: mobo })] : [])];
+  }
+
+  // Card heights shrink when there are many parts so everything stays on one A4 page
+  const giftHeight = (c) => 107 + 34 * Math.ceil(c.gifts.length / 2);
+
+  function cardHeights(cards) {
+    const GAP = 18;
+    const AVAILABLE = 617; // page height minus header, total bar and margins, with slack so A4 never spills onto page 2
+    const giftsH = cards.filter((c) => c.gifts).reduce((sum, c) => sum + giftHeight(c) + GAP, 0);
+    let wideRows = 0;
+    let rows = 0;
+    let pending = 0;
+    cards.filter((c) => !c.gifts).forEach((c) => {
+      if (c.wide) {
+        if (pending) { rows += 1; pending = 0; }
+        wideRows += 1;
+      } else {
+        pending += 1;
+        if (pending === 2) { rows += 1; pending = 0; }
+      }
+    });
+    if (pending) rows += 1;
+    const totalRows = rows + wideRows;
+    if (!totalRows) return { normal: 174, wide: 156 };
+    const h = (AVAILABLE - giftsH - (totalRows - 1) * GAP) / (0.9 * wideRows + rows);
+    // Never shorter than the card's content (badge row + title + detail); longer builds flow onto a second page
+    const normal = Math.round(Math.min(174, Math.max(130, h)));
+    return { normal, wide: Math.max(130, Math.round(normal * 0.9)) };
+  }
+
+  // ---------- Editable text on the quotation ----------
+  // Double-clicking any text in the preview edits it. Edits live in memory until the build itself changes.
+  const textOf = (key, fallback) => (sheetEdits.has(key) ? sheetEdits.get(key) : fallback);
+  const et = (tag, cls, key, fallback, style) => `<${tag}${cls ? ` class="${cls}"` : ''}${style ? ` style="${style}"` : ''} data-ek="${key}">${esc(textOf(key, fallback))}</${tag}>`;
+
+  const cardBody = (c, i) => `<div class="qcols">${c.cols.map((col, j) => {
+    const key = `c${i}.t${j}`;
+    return `<div class="qcol">
+          ${et('div', `qtitle${textOf(key, col.title).length > 16 ? ' long' : ''}`, key, col.title)}
+          ${col.detail ? et('div', 'qdetail', `c${i}.d${j}`, col.detail) : ''}
+        </div>`;
+  }).join('')}</div>`;
+
+  // Small icons for the gift list, drawn in a 16x18 box (each nudged to sit on the text's centre line)
+  const GIFT_ICONS = {
+    keyboard: '<g transform="translate(0 1.7)"><rect x="0.8" y="2" width="13.2" height="10.5" rx="1.8"/><path d="M3.2 4.8h.1M6 4.8h.1M8.8 4.8h.1M11.5 4.8h.1M3.2 7.2h.1M6 7.2h.1M8.8 7.2h.1M11.5 7.2h.1M4 10h6.8"/></g>',
+    mouse: '<g transform="translate(0 0.6)"><rect x="1.4" y="0.8" width="9.9" height="15.2" rx="5"/><path d="M6.4 3.2v4.1"/></g>',
+    pad: '<g transform="translate(0 2)"><rect x="1" y="0.8" width="12.5" height="12.5" rx="2.3"/></g>',
+    cord: '<g transform="translate(0 -0.7)"><path d="M4.1 1.5v4.4M9.2 1.5v4.4M2.2 6h8.9v3.5c0 2.4-1.9 4.1-4.5 4.1S2.2 11.9 2.2 9.5V6ZM6.6 13.6v4.3"/></g>',
+    other: '<circle cx="7.5" cy="9" r="6"/><path d="M4.8 9.2l2 2 3.6-4"/>',
+  };
+  const giftKind = (name) => {
+    const n = name.toLowerCase();
+    if (n.includes('keyboard')) return 'keyboard';
+    if (n.includes('pad')) return 'pad';
+    if (n.includes('mouse')) return 'mouse';
+    if (/cord|cable|plug|power/.test(n)) return 'cord';
+    return 'other';
+  };
+
+  const giftHtml = (c) => `
+      <div class="qgift">
+        <div class="qg-head">
+          <span class="qg-tile"><svg viewBox="0 0 25 25">${ICONS.gift}</svg></span>
+          <div class="qg-text">${et('div', 'qg-title', 'g.title', 'COMPLIMENTARY GIFTS')}${et('div', 'qg-sub', 'g.sub', 'A little extra, on us.')}</div>
+          ${et('span', 'qg-free', 'g.free', 'FREE')}
+        </div>
+        <div class="qg-rule"></div>
+        <div class="qg-items">${c.gifts.map((g, k) => `<div class="qg-item"><svg viewBox="0 0 16 18">${GIFT_ICONS[giftKind(g)]}</svg>${et('span', '', `g.i${k}`, g)}</div>`).join('')}</div>
+      </div>`;
+
+  // Vector desktop set (monitor, tower, keyboard, mouse) for the name card; never a photo
+  const PC_SET = `<svg viewBox="0 0 247 140" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Desktop computer set">
+    <defs>
+      <linearGradient id="pcScreen" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F6FAFF"/><stop offset="1" stop-color="#D9E5F3"/></linearGradient>
+      <linearGradient id="pcTower" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#40566F"/><stop offset="1" stop-color="#29384B"/></linearGradient>
+      <linearGradient id="pcBase" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F9FCFF"/><stop offset="1" stop-color="#D9E4EE"/></linearGradient>
+      <clipPath id="pcScreenClip"><rect x="26" y="29" width="138" height="76" rx="4"/></clipPath>
+    </defs>
+    <circle cx="134" cy="69" r="80" fill="#E2EBF5" opacity="0.72"/>
+    <g transform="translate(5 -4) scale(0.92)">
+      <ellipse cx="116" cy="145" rx="103" ry="5" fill="#8399B2" opacity="0.13"/>
+      <ellipse cx="200" cy="130" rx="41" ry="5" fill="#8399B2" opacity="0.16"/>
+      <rect x="17" y="19" width="156" height="96" rx="9" fill="#B6C5D4" opacity="0.6"/>
+      <rect x="16" y="16" width="156" height="96" rx="9" fill="#2B3B4F"/>
+      <rect x="21" y="21" width="146" height="86" rx="5.5" fill="#435871"/>
+      <rect x="26" y="29" width="138" height="76" rx="4" fill="url(#pcScreen)"/>
+      <g clip-path="url(#pcScreenClip)">
+        <rect x="26" y="29" width="138" height="11" fill="#E9F0F7"/>
+        <circle cx="34" cy="34.6" r="2" fill="#F26822"/><circle cx="41" cy="34.6" r="2" fill="#B2C2D2"/><circle cx="48" cy="34.6" r="2" fill="#B2C2D2"/>
+        <rect x="35" y="48" width="52" height="7" rx="2" fill="#6C829C" opacity="0.85"/>
+        <rect x="35" y="61" width="62" height="4" rx="2" fill="#BAC9D8"/><rect x="35" y="70" width="54" height="4" rx="2" fill="#BAC9D8"/><rect x="35" y="79" width="43" height="4" rx="2" fill="#BAC9D8"/>
+        <rect x="104" y="48" width="50" height="46" rx="5" fill="#FFFFFF" opacity="0.72"/>
+        <path d="M113 81 L121 71 L128 76 L137 60 L145 65" fill="none" stroke="#F26822" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M113 87 H146" stroke="#D4DFE9" stroke-width="2" stroke-linecap="round"/>
+        <rect x="36" y="93" width="58" height="4" rx="2" fill="#C8D6E3"/>
+      </g>
+      <circle cx="94" cy="110" r="1.6" fill="#A0B5CC"/>
+      <path d="M87 112 L84 123 Q93 127 103 123 L100 112Z" fill="#607892"/>
+      <path d="M77 123 H110 Q115 123 116 130 H71 Q72 123 77 123Z" fill="#425970"/>
+      <path d="M76 128 H112" stroke="#829AB2" stroke-width="1.6" opacity="0.8"/>
+      <rect x="184" y="22" width="59" height="106" rx="8" fill="#A9BBCA" opacity="0.33"/>
+      <rect x="181" y="18" width="59" height="106" rx="8" fill="url(#pcTower)"/>
+      <path d="M227 18 Q240 18 240 26 V116 Q240 124 231 124 H226Z" fill="#253448" opacity="0.55"/>
+      <rect x="189" y="27" width="38" height="88" rx="4.5" fill="#33475E" stroke="#637A93" stroke-width="1"/>
+      <circle cx="198" cy="38" r="3.1" fill="#F26822"/>
+      <path d="M209 38 H220" stroke="#93A9BC" stroke-width="2.8" stroke-linecap="round"/>
+      <path d="M196 50 H221 M196 56 H221" stroke="#8197AA" stroke-width="1.5" stroke-linecap="round" opacity="0.78"/>
+      <rect x="194" y="70" width="27" height="30" rx="3" fill="#26374B"/>
+      <path d="M199 76 H216 M199 82 H216 M199 88 H216 M199 94 H216" stroke="#60758B" stroke-width="1.5" stroke-linecap="round"/>
+      <rect x="194" y="106" width="27" height="3" rx="1.5" fill="#7089A1"/>
+      <path d="M17 130 L134 130 Q138 130 141 134 L150 145 Q151 148 146 148 H12 Q7 148 10 143 L14 133 Q15 130 17 130Z" fill="#C6D2E0"/>
+      <path d="M17 127 H134 Q138 127 140 130 L148 141 Q149 144 145 144 H13 Q9 144 11 140 L14 130 Q15 127 17 127Z" fill="url(#pcBase)" stroke="#8198B0" stroke-width="1"/>
+      <g fill="#8398AE" opacity="0.96">
+        <rect x="22" y="132" width="11" height="3" rx="1"/><rect x="36" y="132" width="11" height="3" rx="1"/><rect x="50" y="132" width="11" height="3" rx="1"/><rect x="64" y="132" width="11" height="3" rx="1"/><rect x="78" y="132" width="11" height="3" rx="1"/><rect x="92" y="132" width="11" height="3" rx="1"/><rect x="106" y="132" width="11" height="3" rx="1"/><rect x="120" y="132" width="11" height="3" rx="1"/>
+        <rect x="19" y="138" width="14" height="3" rx="1"/><rect x="36" y="138" width="11" height="3" rx="1"/><rect x="50" y="138" width="11" height="3" rx="1"/><rect x="64" y="138" width="38" height="3" rx="1"/><rect x="105" y="138" width="11" height="3" rx="1"/><rect x="119" y="138" width="17" height="3" rx="1"/>
+      </g>
+      <rect x="22" y="132" width="11" height="3" rx="1" fill="#F26822"/>
+      <ellipse cx="170" cy="143" rx="13" ry="3" fill="#8399B2" opacity="0.22"/>
+      <path d="M160 128 Q160 116 171 116 Q182 116 182 128 V136 Q182 143 171 143 Q160 143 160 136Z" fill="url(#pcBase)" stroke="#8198B0" stroke-width="1.2"/>
+      <path d="M171 117 V129" stroke="#8DA1B5" stroke-width="1.5"/>
+      <rect x="169.5" y="121" width="3" height="5" rx="1.5" fill="#F26822"/>
+    </g>
+  </svg>`;
+
+  // "Modern Computing · RTX 5060 · DDR4 · SATA SSD": only claims what the chosen parts really are
+  function specLine() {
+    const named = (cat) => state.items.find((it) => it.cat === cat && it.name.trim());
+    const parts = ['Modern Computing'];
+    const gpu = named('GPU');
+    const gpuMatch = gpu && gpu.name.match(/RTX\s*\d{4}(?:\s*Ti)?/i);
+    if (gpuMatch) parts.push(gpuMatch[0].toUpperCase().replace('TI', 'Ti'));
+    const ram = named('RAM');
+    const ramMatch = ram && ram.name.match(/DDR\d/i); // DDR5 only when it is DDR5, DDR4 when it is DDR4
+    if (ramMatch) parts.push(ramMatch[0].toUpperCase());
+    const ssd = named('SSD');
+    if (ssd) {
+      if (/nvme/i.test(ssd.name)) parts.push('NVMe SSD');
+      else if (/sata/i.test(ssd.name)) parts.push('SATA SSD');
+      else parts.push('SSD');
+    }
+    return parts.join(' · ');
+  }
+
+  function sysCard() {
+    return `<div class="q-sys">
+        <div class="q-sys-text">
+          <div class="q-sys-eyebrow"><svg viewBox="0 0 24 24">${ICONS.monitor}</svg>${et('span', '', 's.eyebrow', 'DESKTOP SYSTEM')}</div>
+          ${et('div', 'q-sys-title', 's.title', state.title || 'PC Quotation')}
+          ${et('div', 'q-sys-sub', 's.sub', specLine())}
+          <div class="q-sys-bars"><i></i><i></i></div>
+        </div>
+        <div class="q-sys-art">${PC_SET}</div>
+      </div>`;
+  }
 
   function renderSheet() {
-    const rows = namedItems().map((it, i) => (
-      `<tr><td>${i + 1}</td><td>${esc(it.cat)}</td><td>${esc(itemLabel(it))}</td></tr>`
-    )).join('');
+    const all = namedItems().flatMap(cardsOf);
+    const cards = all.filter((c) => !c.gifts).concat(all.filter((c) => c.gifts)); // gifts always come last
+    const heights = cardHeights(cards);
+    const cardsHtml = cards.map((c, i) => c.gifts ? giftHtml(c) : `
+      <div class="qcard${c.wide ? ' wide' : ''}" style="height:${c.wide ? heights.wide : heights.normal}px">
+        <div class="qhead"><span class="qbadge"><svg viewBox="0 0 24 24">${ICONS[c.icon]}</svg></span>${et('span', 'qeyebrow', `c${i}.e`, c.eyebrow)}</div>
+        ${cardBody(c, i)}
+      </div>`).join('');
 
     $('sheet').innerHTML = `
-      ${state.logo ? `<img class="logo" src="${state.logo}" alt="Company logo">` : ''}
-      <h2>${esc(state.title || 'PC Build Quote')}</h2>
-      <div class="info">
-        <span>${state.customer ? 'Customer: ' + esc(state.customer) : ''}</span>
-        <span>Date: ${esc(state.date)}</span>
+      <div class="q-top">
+        ${state.logo ? `<div class="q-brand"><img class="q-logo" src="${state.logo}" alt="Company logo"></div>` : ''}
+        <div class="q-head">
+          ${et('div', 'q-title', 'h.quote', 'QUOTATION')}
+          ${et('div', 'q-meta', 'h.date', `Date: ${prettyDate(state.date)}`, 'top:44px')}
+          ${et('div', 'q-meta', 'h.valid', `Valid for ${VALID_DAYS} Days`, 'top:70px')}
+        </div>
+        <div class="q-rule"></div>
+        ${sysCard()}
       </div>
-      <table>
-        <thead><tr><th>#</th><th>Category</th><th>Part</th></tr></thead>
-        <tbody>${rows}</tbody>
-      </table>
-      <div class="total"><span>Total</span><span>${money(total())}</span></div>
-      <div class="sign">Generated by RigPilot</div>`;
+      <div class="q-cards">${cardsHtml}</div>
+      <div class="qtotal">${et('span', '', 't.label', 'Total')}${et('span', '', 't.amount', qmoney(total()))}</div>`;
   }
 
   window.addEventListener('beforeprint', renderSheet);
+
+  // Shrink the A4 page so the whole quotation fits inside the preview without scrolling
+  function fitPaper() {
+    const scroller = $('preview').querySelector('.modal-scroll');
+    const paper = $('paper');
+    paper.style.transform = '';
+    const pageH = Math.min(paper.offsetHeight, 1120);
+    const scale = Math.min(1, (scroller.clientWidth - 24) / 794, (scroller.clientHeight - 40) / pageH);
+    paper.style.transform = scale < 1 ? `scale(${scale})` : '';
+    $('paper-wrap').style.width = `${794 * scale}px`;
+    $('paper-wrap').style.height = `${paper.offsetHeight * scale}px`;
+  }
+
+  window.addEventListener('resize', () => { if (!$('preview').hidden) fitPaper(); });
+
+  // ---------- Quotation as a JPG (for WhatsApp) ----------
+  const H2C_URL = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+  const H2C_SRI = 'sha512-BNaRQnYJYiPSqHHDb58B0yaPfCu+Wgds8Gp/gU33kqBtgNS4tSPHuGibyoeqMV/TJlSKda6FXzoEyYGjTe+vXA==';
+  let h2cLoading = null;
+
+  function loadHtml2Canvas() {
+    if (window.html2canvas) return Promise.resolve();
+    if (!h2cLoading) {
+      h2cLoading = new Promise((resolve, reject) => {
+        const s = document.createElement('script');
+        s.src = H2C_URL;
+        s.integrity = H2C_SRI;
+        s.crossOrigin = 'anonymous';
+        s.referrerPolicy = 'no-referrer';
+        s.onload = resolve;
+        s.onerror = () => { h2cLoading = null; reject(new Error('Could not load the image library. Check your connection.')); };
+        document.head.appendChild(s);
+      });
+    }
+    return h2cLoading;
+  }
+
+  async function renderQuoteJpeg() {
+    await loadHtml2Canvas();
+    await document.fonts.ready;
+    // Draw an unscaled, hidden copy so the preview's zoom doesn't affect the picture
+    const box = document.createElement('div');
+    box.className = 'paper capture';
+    const copy = $('sheet').cloneNode(true);
+    copy.removeAttribute('id');
+    box.appendChild(copy);
+    document.body.appendChild(box);
+    try {
+      const canvas = await window.html2canvas(box, {
+        scale: 2,
+        backgroundColor: '#ffffff',
+        logging: false,
+        onclone: (doc) => { const el = doc.querySelector('.paper.capture'); if (el) el.style.clipPath = 'none'; },
+      });
+      return await new Promise((resolve, reject) => {
+        canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('Could not create the image.'))), 'image/jpeg', 0.92);
+      });
+    } finally {
+      box.remove();
+    }
+  }
+
+  // The image is prepared in the background so Share can open instantly (phones need it within the tap)
+  let jpegJob = null;
+  let jpegTimer = null;
+  const prepareJpeg = () => { jpegJob = renderQuoteJpeg(); jpegJob.catch(() => {}); return jpegJob; };
+  const scheduleJpeg = () => { jpegJob = null; clearTimeout(jpegTimer); jpegTimer = setTimeout(prepareJpeg, 600); };
+
+  // ---------- Double-click to edit ----------
+  function startEdit(el) {
+    const key = el.dataset.ek;
+    const before = el.textContent;
+    el.contentEditable = 'plaintext-only';
+    if (el.contentEditable !== 'plaintext-only') el.contentEditable = 'true';
+    el.classList.add('editing');
+    el.focus();
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+
+    const finish = (commit) => {
+      el.removeEventListener('blur', onBlur);
+      el.removeEventListener('keydown', onKey);
+      const text = el.textContent.replace(/\s+/g, ' ').trim();
+      if (commit && text && text !== before) sheetEdits.set(key, text);
+      renderSheet(); // re-draw so styles that depend on the text (e.g. long titles) update
+      fitPaper();
+      scheduleJpeg();
+    };
+    const onBlur = () => finish(true);
+    const onKey = (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); el.blur(); }
+      if (e.key === 'Escape') { e.stopPropagation(); finish(false); }
+    };
+    el.addEventListener('blur', onBlur);
+    el.addEventListener('keydown', onKey);
+  }
 
   function openPreview() {
     if (!namedItems().length) { alert('Select or enter at least one part first.'); return; }
     renderSheet();
     $('preview').hidden = false;
     document.body.classList.add('modal-open');
+    $('preview-msg').textContent = 'Double-click any text to edit it';
+    fitPaper();
     $('preview').querySelector('.modal-scroll').scrollTop = 0;
+    scheduleJpeg();
   }
 
   function closePreview() {
+    if (document.activeElement && document.activeElement.isContentEditable) document.activeElement.blur();
     $('preview').hidden = true;
     document.body.classList.remove('modal-open');
   }
 
   function printPdf() {
+    if (document.activeElement && document.activeElement.isContentEditable) document.activeElement.blur();
     // The page title becomes the default file name in "Save as PDF"
     const old = document.title;
-    document.title = (state.title || 'PC Build Quote') + ' ' + state.date;
+    document.title = (state.title || 'PC Quotation') + ' ' + state.date;
     window.print();
     document.title = old;
   }
 
-  // WhatsApp links can't attach files, so the quote is shared as a text message
-  function shareWhatsApp() {
-    const lines = [`*${state.title || 'PC Build Quote'}*`, `Date: ${state.date}`];
-    if (state.customer) lines.push(`Customer: ${state.customer}`);
-    lines.push('');
-    namedItems().forEach((it) => lines.push(`${it.cat}: ${itemLabel(it)}`));
-    lines.push('', `*Total: ${money(total())}*`);
-    window.open('https://wa.me/?text=' + encodeURIComponent(lines.join('\n')), '_blank', 'noopener');
+  // Share the quotation as a JPG. Phones and some desktops open the share sheet with the picture attached;
+  // elsewhere the JPG is downloaded so it can be attached in WhatsApp.
+  async function shareWhatsApp() {
+    const btn = $('btn-wa');
+    if (btn.disabled) return;
+    if (document.activeElement && document.activeElement.isContentEditable) document.activeElement.blur();
+    const label = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Preparing image…';
+    try {
+      const blob = await (jpegJob || prepareJpeg());
+      const name = `${baseName()}-quotation.jpg`;
+      const file = new File([blob], name, { type: 'image/jpeg' });
+      const title = state.title || 'PC Quotation';
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        try {
+          await navigator.share({ files: [file], title, text: `${title} - ${qmoney(total())}` });
+          return;
+        } catch (e) {
+          if (e.name === 'AbortError') return;
+        }
+      }
+      downloadBlob(name, blob);
+      $('preview-msg').innerHTML = 'Image saved to your downloads. <a href="https://wa.me/" target="_blank" rel="noopener">Open WhatsApp</a> and attach it.';
+    } catch (e) {
+      alert(e.message || 'Could not create the image.');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = label;
+    }
   }
 
   // ---------- Export / import ----------
   function download(name, text, type) {
-    const blob = new Blob([text], { type });
+    downloadBlob(name, new Blob([text], { type }));
+  }
+
+  function downloadBlob(name, blob) {
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
     a.download = name;
@@ -643,7 +1045,7 @@
   async function pushLogo() {
     if (!isCloud()) return;
     try {
-      await remoteMutate('logo.json', { logo: '' }, () => ({ logo: state.logo }), state.logo ? 'Update logo' : 'Remove logo');
+      await remoteMutate('logo.json', { logo: '' }, () => ({ logo: state.logo }), 'Update logo');
     } catch (e) {
       alert('The logo was kept on this device only: ' + e.message);
     }
@@ -698,7 +1100,7 @@
   function bindActions() {
     $('btn-logo').addEventListener('click', () => $('file-logo').click());
     $('file-logo').addEventListener('change', (e) => {
-      if (e.target.files[0]) loadLogo(e.target.files[0]);
+      if (e.target.files[0]) loadImageInto('logo', e.target.files[0], 480, 240, false);
       e.target.value = '';
     });
     $('btn-logo-clear').addEventListener('click', () => {
@@ -721,9 +1123,22 @@
     $('btn-connect').addEventListener('click', connect);
     $('btn-disconnect').addEventListener('click', disconnect);
     $('btn-pdf').addEventListener('click', openPreview);
+    $('btn-pdf-sum').addEventListener('click', openPreview);
+
+    // "More" menu closes after a choice, on outside click and on Escape
+    const menu = $('more-menu');
+    menu.addEventListener('click', (e) => { if (e.target.closest('.menu-list button')) menu.open = false; });
+    document.addEventListener('click', (e) => { if (menu.open && !menu.contains(e.target)) menu.open = false; });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') menu.open = false; });
     $('btn-print').addEventListener('click', printPdf);
     $('btn-wa').addEventListener('click', shareWhatsApp);
     $('btn-close').addEventListener('click', closePreview);
+    // Clicking the dimmed area around the page goes back to the main page
+    $('preview').addEventListener('click', (e) => { if (!e.target.closest('.paper-wrap, .modal-bar')) closePreview(); });
+    $('sheet').addEventListener('dblclick', (e) => {
+      const el = e.target.closest('[data-ek]');
+      if (el && !el.isContentEditable) startEdit(el);
+    });
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape' && !$('preview').hidden) closePreview();
     });
@@ -736,7 +1151,7 @@
     });
     $('btn-clear').addEventListener('click', () => {
       if (!confirm('Reset the build to the default empty rows?')) return;
-      const logo = state.logo; // the company logo survives a reset
+      const { logo } = state; // the company logo survives a reset
       state = blank();
       state.logo = logo;
       save();

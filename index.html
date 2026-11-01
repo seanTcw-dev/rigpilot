@@ -5,139 +5,177 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>RigPilot PC Build Cost Calculator</title>
   <meta name="description" content="Free PC build cost calculator with automatic totals and PDF / CSV / JSON export.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <div class="app">
     <header class="top">
-      <div class="brand">
-        <h1>RigPilot</h1>
-        <p>PC build cost calculator</p>
-      </div>
-      <div class="actions">
-        <button id="btn-pdf" class="primary">Export PDF</button>
-        <button id="btn-csv">Export CSV</button>
-        <button id="btn-json">Save JSON</button>
-        <button id="btn-import">Import JSON</button>
-        <button id="btn-clear" class="danger">Reset</button>
-        <input id="file-import" type="file" accept="application/json,.json" hidden>
+      <div class="top-inner">
+        <div class="brand">
+          <span class="logo-mark" aria-hidden="true">
+            <svg viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="3"/><rect x="9.5" y="9.5" width="5" height="5" rx="1"/><path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/></svg>
+          </span>
+          <div>
+            <h1>RigPilot</h1>
+            <p>PC build quotations</p>
+          </div>
+        </div>
+        <div class="actions">
+          <button id="btn-pdf" class="primary">
+            <svg viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h4"/></svg>
+            Export PDF
+          </button>
+          <details class="menu" id="more-menu">
+            <summary class="btn">
+              <svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="19" cy="12" r="1.2"/></svg>
+              More
+            </summary>
+            <div class="menu-list">
+              <button id="btn-csv">Export CSV</button>
+              <button id="btn-json">Save JSON</button>
+              <button id="btn-import">Import JSON</button>
+              <button id="btn-clear" class="danger">Reset build</button>
+            </div>
+          </details>
+          <input id="file-import" type="file" accept="application/json,.json" hidden>
+        </div>
       </div>
     </header>
 
-    <section class="card meta">
-      <label>Build name
-        <input id="title" type="text" placeholder="e.g. Mid-range gaming PC">
-      </label>
-      <label>Customer / reference
-        <input id="customer" type="text" placeholder="Optional">
-      </label>
-      <label>Date
-        <input id="date" type="date">
-      </label>
-      <label>Currency
-        <select id="currency"></select>
-      </label>
-      <div class="logo-field">
-        <span>Company logo (shown at the top of the PDF)</span>
-        <div class="logo-row">
-          <img id="logo-thumb" alt="Company logo" hidden>
-          <button id="btn-logo">Upload logo</button>
-          <button id="btn-logo-clear" hidden>Remove</button>
-          <input id="file-logo" type="file" accept="image/*" hidden>
-        </div>
-      </div>
-    </section>
+    <main class="layout">
+      <div class="col-main">
+        <section class="card card-details">
+          <div class="card-head"><h2>Build details</h2></div>
+          <div class="meta">
+            <label class="f-name">Build name
+              <input id="title" type="text" placeholder="e.g. Commercial Ultra 5 PC">
+            </label>
+            <label class="f-customer">Customer / reference
+              <input id="customer" type="text" placeholder="Optional">
+            </label>
+            <label class="f-date">Date
+              <input id="date" type="date">
+            </label>
+            <label class="f-currency">Currency
+              <select id="currency"></select>
+            </label>
+          </div>
+        </section>
 
-    <section class="card">
-      <div class="table-wrap">
-        <table id="items">
-          <thead>
-            <tr>
-              <th>Category</th>
-              <th>Part</th>
-              <th class="num">Qty</th>
-              <th class="num">Unit price</th>
-              <th class="num">Subtotal</th>
-              <th>Notes</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody></tbody>
-        </table>
-      </div>
-      <div class="quick">
-        <span>Add another row:</span>
-        <div id="quick-btns"></div>
-      </div>
-    </section>
+        <section class="card card-parts">
+          <div class="card-head">
+            <h2>Parts</h2>
+            <span class="card-sub">Pick from the list or type your own name</span>
+          </div>
+          <div class="table-wrap">
+            <table id="items">
+              <thead>
+                <tr>
+                  <th>Category</th>
+                  <th>Part</th>
+                  <th class="num">Qty</th>
+                  <th class="num">Unit price</th>
+                  <th class="num">Subtotal</th>
+                  <th>Notes</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <div class="quick">
+            <span>Add row</span>
+            <div id="quick-btns"></div>
+          </div>
+        </section>
 
-    <section class="card summary">
-      <label class="fee">Service fee
-        <input id="fee" type="number" min="0" step="any" value="500">
-      </label>
-      <div class="grand">
-        <span>Total</span>
-        <strong id="t-total">0</strong>
+        <section class="card history card-history">
+          <div class="hist-head">
+            <h2>Saved builds</h2>
+            <div class="hist-actions">
+              <button id="btn-save" class="primary">Save this build</button>
+              <button id="btn-save-new" hidden>Save as new</button>
+              <button id="btn-backup">Backup all</button>
+              <button id="btn-restore">Restore backup</button>
+            </div>
+          </div>
+          <p id="hist-msg" class="hist-msg" role="status"></p>
+          <input id="hist-search" type="search" placeholder="Search by name, customer or date">
+          <div class="table-wrap">
+            <table id="history">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Name</th>
+                  <th>Customer</th>
+                  <th class="num">Total</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <p id="hist-empty" class="empty">No saved builds yet. Fill in the prices and click "Save this build".</p>
+          <p id="hist-hint" class="hint"></p>
+        </section>
       </div>
-    </section>
 
-    <details class="card sync" id="sync-card">
-      <summary>GitHub storage <span id="sync-status" class="sync-status"></span></summary>
-      <div class="sync-body">
-        <label>Data repository (use a private one)
-          <input id="sync-repo" type="text" placeholder="owner/repo" autocomplete="off">
-        </label>
-        <label id="sync-token-label">Access token
-          <input id="sync-token" type="password" placeholder="github_pat_…" autocomplete="off">
-        </label>
-        <label id="sync-remember-label" class="check">
-          <input id="sync-remember" type="checkbox" checked> Remember the token on this device
-        </label>
-        <div class="sync-actions">
-          <button id="btn-connect" class="primary">Connect</button>
-          <button id="btn-disconnect" hidden>Disconnect</button>
-        </div>
-        <p class="hint">Saved builds and the company logo are stored as files in this repository instead of in the browser. The token needs <b>Contents: Read and write</b> on that one repository only.</p>
-      </div>
-    </details>
+      <aside class="col-side">
+        <section class="card summary card-summary">
+          <div class="grand">
+            <span>Total</span>
+            <strong id="t-total">0</strong>
+          </div>
+          <label class="fee">Service fee
+            <input id="fee" type="number" min="0" step="any" value="500">
+          </label>
+          <button id="btn-pdf-sum" class="primary block">Preview &amp; export PDF</button>
+        </section>
 
-    <section class="card history">
-      <div class="hist-head">
-        <h2>Saved builds</h2>
-        <div class="hist-actions">
-          <button id="btn-save" class="primary">Save this build</button>
-          <button id="btn-save-new" hidden>Save as new</button>
-          <button id="btn-backup">Backup all</button>
-          <button id="btn-restore">Restore backup</button>
-        </div>
-      </div>
-      <p id="hist-msg" class="hist-msg" role="status"></p>
-      <input id="hist-search" type="search" placeholder="Search by name, customer or date">
-      <div class="table-wrap">
-        <table id="history">
-          <thead>
-            <tr>
-              <th>Date</th>
-              <th>Name</th>
-              <th>Customer</th>
-              <th class="num">Total</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody></tbody>
-        </table>
-      </div>
-      <p id="hist-empty" class="empty">No saved builds yet. Fill in the prices and click "Save this build".</p>
-      <p id="hist-hint" class="hint"></p>
-    </section>
+        <details class="card sync card-brand" id="brand-card">
+          <summary>Company logo <span class="sync-status">Shown at the top of the quotation</span></summary>
+          <div class="sync-body logo-field">
+            <div class="logo-row">
+              <img id="logo-thumb" alt="Company logo" hidden>
+              <button id="btn-logo">Upload logo</button>
+              <button id="btn-logo-clear" hidden>Remove</button>
+              <input id="file-logo" type="file" accept="image/*" hidden>
+            </div>
+          </div>
+        </details>
 
-    <footer class="foot">Your data is stored only in this browser and is never uploaded.</footer>
+        <details class="card sync card-storage" id="sync-card">
+          <summary>GitHub storage <span id="sync-status" class="sync-status"></span></summary>
+          <div class="sync-body">
+            <label>Data repository (use a private one)
+              <input id="sync-repo" type="text" placeholder="owner/repo" autocomplete="off">
+            </label>
+            <label id="sync-token-label">Access token
+              <input id="sync-token" type="password" placeholder="github_pat_…" autocomplete="off">
+            </label>
+            <label id="sync-remember-label" class="check">
+              <input id="sync-remember" type="checkbox" checked> Remember the token on this device
+            </label>
+            <div class="sync-actions">
+              <button id="btn-connect" class="primary">Connect</button>
+              <button id="btn-disconnect" hidden>Disconnect</button>
+            </div>
+            <p class="hint">Saved builds and the company logo are stored as files in this repository instead of in the browser. The token needs <b>Contents: Read and write</b> on that one repository only.</p>
+          </div>
+        </details>
+      </aside>
+    </main>
+
+    <footer class="foot">Your data stays in this browser unless you connect GitHub storage.</footer>
   </div>
 
   <!-- PDF preview: the quote sheet is shown here, then printed / saved as PDF from this view -->
   <div id="preview" class="modal" role="dialog" aria-modal="true" aria-label="PDF preview" hidden>
     <div class="modal-bar">
-      <h3>PDF preview</h3>
+      <div class="modal-title"><h3>PDF preview</h3><span id="preview-msg" class="modal-hint"></span></div>
       <div class="group">
         <button id="btn-print" class="primary">Export PDF</button>
         <button id="btn-wa" class="whatsapp">Share to WhatsApp</button>
@@ -145,7 +183,9 @@
       </div>
     </div>
     <div class="modal-scroll">
-      <div class="paper"><div id="sheet"></div></div>
+      <div class="paper-wrap" id="paper-wrap">
+        <div class="paper" id="paper"><div id="sheet"></div></div>
+      </div>
     </div>
   </div>
 
