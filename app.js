@@ -1,12 +1,13 @@
 (() => {
   // Default build: one row per category, pre-filled with the common choice (GPU left empty)
   const DEFAULT_BUILD = [
-    ['CPU + Mobo', 'Intel Core Ultra 5 225 + H810M-A'],
+    ['CPU + Mobo', 'Intel Core Ultra 5 225 + ASUS PRIME H810M-A'],
     ['GPU', ''],
     ['RAM', 'DDR5 8GB'],
     ['SSD', 'NVMe SSD 512GB'],
     ['PSU', '550W PSU'],
     ['Casing', 'Tempered Glass Side Panel Case'],
+    ['WiFi & BT', 'WiFi & Bluetooth'],
     ['Gift', 'Keyboard, Mouse, Mouse Pad, Power Cord'],
   ];
   const CATS = DEFAULT_BUILD.map(([cat]) => cat);
@@ -26,13 +27,14 @@
       intelGroup(7, ['265', '265F', '265K', '265KF', '265T']),
       intelGroup(9, ['285', '285K', '285T']),
     ],
-    'CPU + Mobo': plain(['Intel Core Ultra 5 225 + H810M-A', 'Intel Core Ultra 5 225 + B860M-AYW', 'Intel Core Ultra 5 225 + B860M-A']),
+    'CPU + Mobo': plain(['Intel Core Ultra 5 225 + ASUS PRIME H810M-A', 'Intel Core Ultra 5 225 + ASUS PRIME B860M-AYW', 'Intel Core Ultra 5 225 + ASUS PRIME B860M-A']),
     GPU: plain(['ASUS Dual RTX 5050', 'ASUS Dual RTX 5060', 'ASUS Dual RTX 5060 Ti']),
     RAM: plain(['DDR4 8GB', 'DDR4 16GB', 'DDR5 8GB', 'DDR5 16GB']),
-    Mobo: plain(['H810M-A', 'B860M-AYW', 'B860M-A']),
+    Mobo: plain(['ASUS PRIME H810M-A', 'ASUS PRIME B860M-AYW', 'ASUS PRIME B860M-A']),
     PSU: plain(['550W PSU', 'Cooler Master MWE V3 750W 80+ Gold']),
     SSD: plain(['NVMe SSD 512GB', 'NVMe SSD 1TB', 'NVMe SSD 2TB']),
     Casing: plain(['Tempered Glass Side Panel Case']),
+    'WiFi & BT': plain(['WiFi & Bluetooth']),
     Gift: plain(['Keyboard, Mouse, Mouse Pad, Power Cord']),
   };
   const CUSTOM = '__custom';
@@ -102,6 +104,7 @@
 
   function renderTotals() {
     $('t-total').textContent = money(total());
+    $('t-total-bar').textContent = money(total());
     document.querySelectorAll('#items tbody tr').forEach((tr) => {
       const it = state.items.find((x) => x.id === tr.dataset.id);
       if (it) tr.querySelector('.sub').textContent = money(num(it.qty) * num(it.price));
@@ -312,6 +315,8 @@
     heatsink: '<path d="M4 3v12M8 3v12M12 3v12M16 3v12M20 3v12"/><rect x="2" y="15" width="20" height="5" rx="1"/><path d="M6 20v2M18 20v2"/>',
     gift: '<rect x="2.6" y="8.5" width="19" height="5.7" rx="1.5"/><path d="M4.8 14.3v7.2h14.6v-7.2M12.1 8.5v13"/><path d="M12 8.5C7.7 8.5 6.3 7.5 6.3 5.2c0-1.7 1.3-2.3 2.5-1.9 1.5.5 2.4 2.6 3.2 5.2Zm0 0c4.3 0 5.7-1 5.7-3.3 0-1.7-1.3-2.3-2.5-1.9-1.5.5-2.4 2.6-3.2 5.2Z"/>',
     box: '<path d="M3 7l9-4 9 4v10l-9 4-9-4z"/><path d="M3 7l9 4 9-4M12 11v10"/>',
+    wifi: '<path d="M2 9a15 15 0 0 1 20 0M5 12.5a10 10 0 0 1 14 0M8.5 16a5 5 0 0 1 7 0"/><circle cx="12" cy="19.5" r="1"/>',
+    bluetooth: '<path d="M7 7l10 10-5 5V2l5 5L7 17"/>',
   };
 
   // The quotation shows the CPU tier only (e.g. "Ultra 5"), not the full model
@@ -381,6 +386,7 @@
 
   // A "CPU + Mobo" row becomes two separate cards on the quotation: processor and motherboard
   function cardsOf(it) {
+    if (it.cat === 'WiFi & BT') return [wirelessCard(it)];
     if (it.cat !== 'CPU + Mobo') return [cardOf(it)];
     const [cpu, ...rest] = it.name.trim().split(/\s+\+\s+/);
     const mobo = rest.join(' + ');
@@ -388,16 +394,17 @@
   }
 
   // Card heights shrink when there are many parts so everything stays on one A4 page
-  const giftHeight = (c) => 107 + 34 * Math.ceil(c.gifts.length / 2);
+  const giftHeight = (c) => 103 + 30 * Math.ceil(c.gifts.length / 2);
+  const WIRELESS_H = 80;
 
   function cardHeights(cards) {
     const GAP = 18;
-    const AVAILABLE = 617; // page height minus header, total bar and margins, with slack so A4 never spills onto page 2
-    const giftsH = cards.filter((c) => c.gifts).reduce((sum, c) => sum + giftHeight(c) + GAP, 0);
+    const AVAILABLE = 705; // page height minus header, total bar and margins, with slack so A4 never spills onto page 2
+    const giftsH = cards.filter((c) => c.gifts || c.strip).reduce((sum, c) => sum + (c.gifts ? giftHeight(c) : WIRELESS_H) + GAP, 0);
     let wideRows = 0;
     let rows = 0;
     let pending = 0;
-    cards.filter((c) => !c.gifts).forEach((c) => {
+    cards.filter((c) => !c.gifts && !c.strip).forEach((c) => {
       if (c.wide) {
         if (pending) { rows += 1; pending = 0; }
         wideRows += 1;
@@ -411,8 +418,8 @@
     if (!totalRows) return { normal: 174, wide: 156 };
     const h = (AVAILABLE - giftsH - (totalRows - 1) * GAP) / (0.9 * wideRows + rows);
     // Never shorter than the card's content (badge row + title + detail); longer builds flow onto a second page
-    const normal = Math.round(Math.min(174, Math.max(130, h)));
-    return { normal, wide: Math.max(130, Math.round(normal * 0.9)) };
+    const normal = Math.round(Math.min(174, Math.max(120, h)));
+    return { normal, wide: Math.max(120, Math.round(normal * 0.9)) };
   }
 
   // ---------- Editable text on the quotation ----------
@@ -529,6 +536,32 @@
     return parts.join(' · ');
   }
 
+  // "WiFi 6E & Bluetooth 5.3" typed on the main page becomes "WiFi 6E + Bluetooth 5.3"; only what is typed gets claimed
+  function wirelessCard(it) {
+    const name = it.name.trim();
+    const wifi = name.match(/Wi-?Fi(?:\s*\d+E?)?/i);
+    const bt = name.match(/Bluetooth(?:\s*\d+(?:\.\d+)?)?|\bBT\b(?:\s*\d+(?:\.\d+)?)?/i);
+    const parts = [];
+    if (wifi) parts.push(wifi[0].replace(/wi-?fi/i, 'WiFi'));
+    if (bt) parts.push(bt[0].replace(/^bt\b/i, 'Bluetooth'));
+    return {
+      strip: true,
+      eyebrow: 'WIRELESS CONNECTIVITY',
+      title: parts.length ? parts.join(' + ') : name,
+      icons: parts.length ? [wifi && 'wifi', bt && 'bluetooth'].filter(Boolean) : ['wifi'],
+    };
+  }
+
+  // Full-width card so customers see straight away that the PC has WiFi / Bluetooth
+  const wirelessHtml = (c, i) => `
+      <div class="qwireless">
+        <div class="qw-main">
+          <span class="qbadge"><svg viewBox="0 0 24 24">${ICONS[c.icons[0]]}</svg></span>
+          <div class="qw-text">${et('span', 'qeyebrow', `w${i}.e`, c.eyebrow)}${et('div', 'qw-title', `w${i}.t`, c.title)}</div>
+        </div>
+        <div class="qw-icons">${c.icons.map((k) => `<span><svg viewBox="0 0 24 24">${ICONS[k]}</svg></span>`).join('')}</div>
+      </div>`;
+
   function sysCard() {
     return `<div class="q-sys">
         <div class="q-sys-text">
@@ -543,9 +576,9 @@
 
   function renderSheet() {
     const all = namedItems().flatMap(cardsOf);
-    const cards = all.filter((c) => !c.gifts).concat(all.filter((c) => c.gifts)); // gifts always come last
+    const cards = all.filter((c) => !c.gifts && !c.strip).concat(all.filter((c) => c.strip), all.filter((c) => c.gifts)); // WiFi strip, then gifts, always last
     const heights = cardHeights(cards);
-    const cardsHtml = cards.map((c, i) => c.gifts ? giftHtml(c) : `
+    const cardsHtml = cards.map((c, i) => c.gifts ? giftHtml(c) : c.strip ? wirelessHtml(c, i) : `
       <div class="qcard${c.wide ? ' wide' : ''}" style="height:${c.wide ? heights.wide : heights.normal}px">
         <div class="qhead"><span class="qbadge"><svg viewBox="0 0 24 24">${ICONS[c.icon]}</svg></span>${et('span', 'qeyebrow', `c${i}.e`, c.eyebrow)}</div>
         ${cardBody(c, i)}
@@ -667,12 +700,21 @@
     el.addEventListener('keydown', onKey);
   }
 
+  // On touch screens a single tap edits text; with a mouse it is a double-click (or switch "Edit text" on)
+  let editMode = window.matchMedia('(pointer: coarse)').matches;
+  function syncEditMode() {
+    $('preview').classList.toggle('edit-on', editMode);
+    $('btn-edit').classList.toggle('on', editMode);
+    $('btn-edit').setAttribute('aria-pressed', String(editMode));
+    $('preview-msg').textContent = editMode ? 'Tap any text to edit it' : 'Double-click any text to edit it';
+  }
+
   function openPreview() {
     if (!namedItems().length) { alert('Select or enter at least one part first.'); return; }
     renderSheet();
     $('preview').hidden = false;
     document.body.classList.add('modal-open');
-    $('preview-msg').textContent = 'Double-click any text to edit it';
+    syncEditMode();
     fitPaper();
     $('preview').querySelector('.modal-scroll').scrollTop = 0;
     scheduleJpeg();
@@ -1140,6 +1182,12 @@
       const el = e.target.closest('[data-ek]');
       if (el && !el.isContentEditable) startEdit(el);
     });
+    $('sheet').addEventListener('click', (e) => {
+      const el = editMode && e.target.closest('[data-ek]');
+      if (el && !el.isContentEditable) startEdit(el);
+    });
+    $('btn-edit').addEventListener('click', () => { editMode = !editMode; syncEditMode(); });
+    $('btn-pdf-bar').addEventListener('click', openPreview);
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape' && !$('preview').hidden) closePreview();
     });

@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>RigPilot PC Build Cost Calculator</title>
   <meta name="description" content="Free PC build cost calculator with automatic totals and PDF / CSV / JSON export.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -31,7 +31,7 @@
           <details class="menu" id="more-menu">
             <summary class="btn">
               <svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="19" cy="12" r="1.2"/></svg>
-              More
+              <span class="btn-label">More</span>
             </summary>
             <div class="menu-list">
               <button id="btn-csv">Export CSV</button>
@@ -169,6 +169,11 @@
       </aside>
     </main>
 
+    <div class="mobile-bar">
+      <div><span>Total</span><strong id="t-total-bar">0</strong></div>
+      <button id="btn-pdf-bar" class="primary">Export PDF</button>
+    </div>
+
     <footer class="foot">Your data stays in this browser unless you connect GitHub storage.</footer>
   </div>
 
@@ -177,6 +182,7 @@
     <div class="modal-bar">
       <div class="modal-title"><h3>PDF preview</h3><span id="preview-msg" class="modal-hint"></span></div>
       <div class="group">
+        <button id="btn-edit" class="toggle" aria-pressed="false">Edit text</button>
         <button id="btn-print" class="primary">Export PDF</button>
         <button id="btn-wa" class="whatsapp">Share to WhatsApp</button>
         <button id="btn-close">Close</button>
