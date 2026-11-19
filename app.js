@@ -678,13 +678,13 @@
     document.body.appendChild(box);
     try {
       const canvas = await window.html2canvas(box, {
-        scale: 2,
+        scale: 3, // 2382 x 3360 px: still sharp after WhatsApp recompresses it (send it as HD)
         backgroundColor: '#ffffff',
         logging: false,
         onclone: (doc) => { const el = doc.querySelector('.paper.capture'); if (el) el.style.clipPath = 'none'; },
       });
       return await new Promise((resolve, reject) => {
-        canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('Could not create the image.'))), 'image/jpeg', 0.92);
+        canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('Could not create the image.'))), 'image/jpeg', 0.95);
       });
     } finally {
       box.remove();

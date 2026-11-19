@@ -561,6 +561,7 @@ body.modal-open { overflow: hidden; }
 @media print {
   @page { size: A4; margin: 0; }
   html, body { margin: 0; background: #fff; }
+  body { padding: 0 !important; } /* the A4 page is narrow enough to trigger the phone layout's bottom padding */
   body.modal-open { overflow: visible; }
   .app, .modal-bar { display: none; }
   .modal, .modal[hidden] { display: block !important; position: static; background: none; }
